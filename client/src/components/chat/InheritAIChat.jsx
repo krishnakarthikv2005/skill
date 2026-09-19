@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { api } from '../../services/api';
 import { 
   Bot, 
@@ -7,17 +7,16 @@ import {
   BookOpen, 
   ShieldCheck, 
   ExternalLink, 
-  User, 
   X, 
-  MessageSquare, 
-  ChevronRight,
   Maximize2,
-  Minimize2
+  Minimize2,
+  RefreshCw
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export const InheritAIChat = ({ embedded = false, defaultOpen = false, initialQuery = '' }) => {
   const [isOpen, setIsOpen] = useState(defaultOpen || embedded);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [messages, setMessages] = useState([
     {
       id: 'm-init',
@@ -32,21 +31,19 @@ export const InheritAIChat = ({ embedded = false, defaultOpen = false, initialQu
   const messagesEndRef = useRef(null);
   const navigate = useNavigate();
 
-  useEffect(() => {
+  const scrollToBottom = useCallback(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [messages, isOpen]);
+  }, []);
 
   useEffect(() => {
-    if (initialQuery) {
-      handleSend(initialQuery);
-    }
-  }, [initialQuery]);
+    scrollToBottom();
+  }, [messages, isOpen, scrollToBottom]);
 
-  const handleSend = async (queryText) => {
+  const handleSend = useCallback(async (queryText) => {
     const text = queryText || inputValue;
-    if (!text.trim() || loading) return;
+    if (!text || !text.trim() || loading) return;
 
     const userMsg = {
       id: `user-${Date.now()}`,
@@ -60,20 +57,20 @@ export const InheritAIChat = ({ embedded = false, defaultOpen = false, initialQu
     setLoading(true);
 
     try {
-      const res = await api.askInheritAI(text);
+      const res = await api.askInheritAI(text.trim());
       const aiMsg = {
         id: `ai-${Date.now()}`,
         sender: 'ai',
-        text: res.answer,
-        sources: res.sources || [],
-        type: res.type || 'ORGANIZATIONAL_KNOWLEDGE_RETRIEVAL',
-        distinction: res.distinction,
+        text: res?.answer || 'Response generated from internal organizational knowledge repository.',
+        sources: res?.sources || [],
+        type: res?.type || 'ORGANIZATIONAL_KNOWLEDGE_RETRIEVAL',
+        distinction: res?.distinction,
         timestamp: 'Just now'
       };
       setMessages(prev => [...prev, aiMsg]);
     } catch (err) {
-      console.warn('AI chat error, using fallback:', err);
-      // Heuristic fallback
+      console.warn('AI chat error, using heuristic fallback:', err);
+      // Heuristic fallback response with verified organizational solution
       setMessages(prev => [...prev, {
         id: `ai-${Date.now()}`,
         sender: 'ai',
@@ -96,7 +93,13 @@ export const InheritAIChat = ({ embedded = false, defaultOpen = false, initialQu
     } finally {
       setLoading(false);
     }
-  };
+  }, [inputValue, loading]);
+
+  useEffect(() => {
+    if (initialQuery) {
+      handleSend(initialQuery);
+    }
+  }, [initialQuery, handleSend]);
 
   const samplePrompts = [
     "How did previous developers solve database update problems?",
@@ -122,7 +125,9 @@ export const InheritAIChat = ({ embedded = false, defaultOpen = false, initialQu
 
   const containerClasses = embedded
     ? 'w-full h-[600px] glass-panel rounded-3xl border border-slate-800 flex flex-col overflow-hidden shadow-2xl'
-    : 'fixed bottom-6 right-6 z-50 w-96 sm:w-[440px] h-[580px] glass-panel rounded-3xl border border-brand-500/40 flex flex-col overflow-hidden shadow-2xl animate-fade-in';
+    : isExpanded
+      ? 'fixed bottom-6 right-6 z-50 w-[95vw] sm:w-[650px] h-[750px] max-h-[85vh] glass-panel rounded-3xl border border-brand-500/50 flex flex-col overflow-hidden shadow-2xl animate-fade-in'
+      : 'fixed bottom-6 right-6 z-50 w-96 sm:w-[440px] h-[580px] glass-panel rounded-3xl border border-brand-500/40 flex flex-col overflow-hidden shadow-2xl animate-fade-in';
 
   return (
     <div className={containerClasses}>
@@ -135,7 +140,7 @@ export const InheritAIChat = ({ embedded = false, defaultOpen = false, initialQu
           <div>
             <div className="flex items-center gap-2">
               <h4 className="font-bold text-sm text-white font-display">InheritAI</h4>
-              <span className="text-[10px] px-2 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30">
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30">
                 Org Knowledge Engine
               </span>
             </div>
@@ -143,14 +148,26 @@ export const InheritAIChat = ({ embedded = false, defaultOpen = false, initialQu
           </div>
         </div>
 
-        {!embedded && (
-          <button
-            onClick={() => setIsOpen(false)}
-            className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        )}
+        <div className="flex items-center gap-1">
+          {!embedded && (
+            <button
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              title={isExpanded ? "Minimize size" : "Expand size"}
+            >
+              {isExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            </button>
+          )}
+          {!embedded && (
+            <button
+              onClick={() => setIsOpen(false)}
+              className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              title="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Messages Scroll Area */}
@@ -192,7 +209,7 @@ export const InheritAIChat = ({ embedded = false, defaultOpen = false, initialQu
                   </span>
                   {m.sources.map((src) => (
                     <div
-                      key={src.id}
+                      key={src.id || src.title}
                       className="p-2 rounded-xl bg-slate-950/80 border border-amber-500/30 flex items-center justify-between gap-2"
                     >
                       <div className="truncate">
